@@ -1,0 +1,62 @@
+name: Acilis Oranlari Arsiv
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_modu:
+        description: "Test modu (tek lig, hizli dogrulama)"
+        type: boolean
+        default: true
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: arsiv
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Git kimligi
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: OddsHarvester + tarayici kur
+        run: |
+          pip install --no-cache-dir oddsharvester
+          python -m playwright install --with-deps chromium
+
+      - name: Arsivi cek
+        env:
+          BURO: bet365
+          ARSIV_DIR: arsiv
+          GIT_COMMIT: "1"
+          SMOKE_SEZON: "2024-2025"
+          CONCURRENCY: "4"
+          REQUEST_DELAY: "0.5"
+          SEZONLAR: ${{ vars.SEZONLAR || 'current 2024-2025' }}
+          LIG_LIMIT: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_modu) && '1' || '0' }}
+          MAX_PAGES: ${{ (github.event_name == 'workflow_dispatch' && inputs.test_modu) && '1' || '' }}
+        run: python arsiv_topla.py
+
+      - name: Sonuclari kaydet
+        if: always()
+        run: |
+          git add -A
+          git commit -m "arsiv guncelleme" || echo "degisiklik yok"
+          git pull --rebase --autostash || true
+          git push || echo "push atlandi"
